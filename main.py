@@ -32,7 +32,7 @@ fourbit_models = [
     "unsloth/Llama-3.2-1B-Instruct-bnb-4bit",
     "unsloth/Llama-3.2-3B-bnb-4bit",
     "unsloth/Llama-3.2-3B-Instruct-bnb-4bit",
-]  # More models at https://huggingface.co/unsloth
+]  # More models at unsloth
 # 定義可用的 4-bit 模型清單，這些模型使用低精度表示法以減少記憶體需求
 
 max_seq_length = 1024
@@ -62,37 +62,39 @@ model = FastLanguageModel.get_peft_model(
 # 使用 LoRA 進行模型壓縮與加速，配置梯度檢查點和目標模塊以提高記憶體效率
 
 # ==============================================================處理dataset==================================================================
-from unsloth.chat_templates import get_chat_template
+alpaca_prompt = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
 
-tokenizer = get_chat_template(
-    tokenizer,
-    chat_template = "llama-3.1",
-)
+### Instruction:
+{}
 
+### Input:
+{}
+
+### Response:
+{}"""
+
+EOS_TOKEN = tokenizer.eos_token # Must add EOS_TOKEN
 def formatting_prompts_func(examples):
-    convos = examples["conversations"]
+    instructions = examples["instruction"]
+    inputs       = examples["input"]
+    outputs      = examples["output"]
     texts = []
-    for convo in convos:
-        # 應用聊天模板生成文本
-        text = tokenizer.apply_chat_template(convo, tokenize=False, add_generation_prompt=False)
+    
+    for instruction, input, output in zip(instructions, inputs, outputs):
+        # Must add EOS_TOKEN, otherwise your generation will go on forever!
+        text = alpaca_prompt.format(instruction, input, output) + EOS_TOKEN
         
-        # 確保 text 正確傳遞給 tokenizer
         tokenized = tokenizer(text=text, truncation=False, add_special_tokens=True)
-        
-        # 篩選 token 數量小於等於 1024 的文本
         if len(tokenized["input_ids"]) <= max_seq_length:
             texts.append(text)
         else:
-            texts.append(None)  # 插入占位符，保證結構一致
-    return {"text": texts}
+            texts.append(None) 
+    return { "text" : texts}
 
 from datasets import load_dataset
 dataset = load_dataset("YShane11/legislation", split = "train")
+dataset = dataset.map(formatting_prompts_func, batched=True)
 
-
-from unsloth.chat_templates import standardize_sharegpt
-dataset = standardize_sharegpt(dataset)
-dataset = dataset.map(formatting_prompts_func, batched = True,)
 dataset = dataset.filter(lambda example: example["text"] is not None)
 # ===========================================================================================================================================
 
@@ -103,16 +105,15 @@ trainer = SFTTrainer(
     train_dataset = dataset,
     dataset_text_field = "text",
     max_seq_length = max_seq_length,
-    data_collator = DataCollatorForSeq2Seq(tokenizer = tokenizer),
     dataset_num_proc = 2,
-    packing = False, 
+    packing = False, # Can make training 5x faster for short sequences.
     args = TrainingArguments(
         per_device_train_batch_size = 1,
         gradient_accumulation_steps = 4,
-        warmup_steps = 10,
-        num_train_epochs = 3, 
-        max_steps = 100,
-        learning_rate = 5e-5,
+        warmup_steps = 5,
+        # num_train_epochs = 1, # Set this for 1 full training run.
+        max_steps = 1,
+        learning_rate = 2e-4,
         fp16 = not is_bfloat16_supported(),
         bf16 = is_bfloat16_supported(),
         logging_steps = 1,
@@ -120,22 +121,11 @@ trainer = SFTTrainer(
         weight_decay = 0.01,
         lr_scheduler_type = "linear",
         seed = 3407,
-        output_dir = "./outputs",
-        report_to = "wandb", 
+        output_dir = "outputs",
+        report_to = "none", # Use this for WandB etc
     ),
 )
 # 建立 SFTTrainer 實例，設定模型和數據集，用於微調，並指定各項訓練參數
-
-from unsloth.chat_templates import train_on_responses_only
-
-trainer = train_on_responses_only(
-    trainer,
-    instruction_part = "<|start_header_id|>user<|end_header_id|>\n\n",
-    response_part = "<|start_header_id|>assistant<|end_header_id|>\n\n",
-)
-
-
-
 
 trainer_stats = trainer.train()
 # 開始訓練模型
@@ -147,9 +137,10 @@ trainer_stats = trainer.train()
 # (3) 添加評估迴圈 / 解決OOM問題
 # (4) 自訂聊天範本
 
-model.push_to_hub("YShane11/llama3.2_legislation", token = "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") # Online saving
-tokenizer.push_to_hub("YShane11/llama3.2_legislation", token = "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") # Online saving
-
+model.save_pretrained("YShane11/llama3.2_legislation") # Local saving
+tokenizer.save_pretrained("YShane11/llama3.2_legislation")
+# model.push_to_hub("YShane11/llama3.2_legislation", token = "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") # Online saving
+# tokenizer.push_to_hub("YShane11/llama3.2_legislation", token = "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") # Online saving
 
 if True: model.push_to_hub_gguf("YShane11/llama3.2_legislation", tokenizer, quantization_method = "f16", token = "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")
-if True: model.push_to_hub_gguf("YShane11/llama3.2_legislation", tokenizer, quantization_method = "q4_k_m", token = "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")
+# if True: model.push_to_hub_gguf("YShane11/llama3.2_legislation", tokenizer, quantization_method = "q4_k_m", token = "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")
