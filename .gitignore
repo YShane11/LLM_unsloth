@@ -3,3 +3,4 @@ _unsloth_sentencepiece_temp/
 llama.cpp/
 outputs/
 YShane11/llama3.2_legislation/
+wandb/
