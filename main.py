@@ -5,6 +5,9 @@ from transformers import TrainingArguments, DataCollatorForSeq2Seq
 from unsloth import is_bfloat16_supported
 import wandb
 import os
+import torch
+
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
 
 wandb.login()
 os.environ["WANDB_PROJECT"] = "YSH"
@@ -31,7 +34,7 @@ fourbit_models = [
 max_seq_length = 1024
 
 model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name = "unsloth/Llama-3.2-3B-Instruct", 
+    model_name = "unsloth/Llama-3.2-1B-Instruct", 
     max_seq_length = max_seq_length,
     dtype = None,
     load_in_4bit = True,
@@ -41,10 +44,10 @@ model, tokenizer = FastLanguageModel.from_pretrained(
 
 model = FastLanguageModel.get_peft_model(
     model,
-    r = 8, # 會影響模型壓縮的效果和表現
+    r = 4, # 會影響模型壓縮的效果和表現
     target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
                       "gate_proj", "up_proj", "down_proj",],
-    lora_alpha = 16, # 調節低秩層對最終輸出的影響
+    lora_alpha = 8, # 調節低秩層對最終輸出的影響
     lora_dropout = 0.1,
     bias = "none", 
     use_gradient_checkpointing = True, 
@@ -90,6 +93,7 @@ dataset = dataset.map(formatting_prompts_func, batched=True)
 dataset = dataset.filter(lambda example: example["text"] is not None)
 # ===========================================================================================================================================
 
+torch.cuda.empty_cache()
 
 trainer = SFTTrainer(
     model = model,
@@ -100,14 +104,14 @@ trainer = SFTTrainer(
     dataset_num_proc = 2,
     packing = False, # Can make training 5x faster for short sequences.
     args = TrainingArguments(
-        per_device_train_batch_size = 4,
-        gradient_accumulation_steps = 8,
+        per_device_train_batch_size = 1,
+        gradient_accumulation_steps = 16,
         warmup_steps = 30,
         # num_train_epochs = 1, # Set this for 1 full training run.
-        max_steps = 300,
+        max_steps = 200,
         learning_rate = 1e-5,
-        fp16 = not is_bfloat16_supported(),
-        bf16 = is_bfloat16_supported(),
+        fp16 = is_bfloat16_supported(),
+        bf16 = not is_bfloat16_supported(),
         logging_steps = 10,
         optim = "adamw_8bit",
         weight_decay = 0.01,
@@ -119,8 +123,12 @@ trainer = SFTTrainer(
 )
 # 建立 SFTTrainer 實例，設定模型和數據集，用於微調，並指定各項訓練參數
 
+torch.cuda.empty_cache()
+
 trainer_stats = trainer.train()
 # 開始訓練模型
+
+torch.cuda.empty_cache()
 
 # 參見 https://github.com/unslothai/unsloth/wiki 獲取進階訓練技巧，如：
 # (1) 儲存至GGUF / 合併至16位元以支援vLLM
@@ -128,10 +136,16 @@ trainer_stats = trainer.train()
 # (3) 添加評估迴圈 / 解決OOM問題
 # (4) 自訂聊天範本
 
-model.save_pretrained("YShane11/llama3.2_flight") # Local saving
-tokenizer.save_pretrained("YShane11/llama3.2_flight")
-# model.push_to_hub("YShane11/llama3.2_flight", token = "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") # Online saving
-# tokenizer.push_to_hub("YShane11/llama3.2_flight", token = "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") # Online saving
+model.save_pretrained("./YShane11/llama3.2_flight") # Local saving
+tokenizer.save_pretrained("./YShane11/llama3.2_flight")
 
-if True: model.push_to_hub_gguf("YShane11/llama3.2_flight", tokenizer, quantization_method = "f16", token = "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")
-if True: model.push_to_hub_gguf("YShane11/llama3.2_flight", tokenizer, quantization_method = "q4_k_m", token = "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")
+torch.cuda.empty_cache()
+model.push_to_hub("YShane11/llama3.2_flight", token = "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") # Online saving
+tokenizer.push_to_hub("YShane11/llama3.2_flight", token = "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") # Online saving
+
+torch.cuda.empty_cache()
+
+# if True: model.push_to_hub_gguf("YShane11/llama3.2_flight", tokenizer, quantization_method = "f16", token = "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")
+# if True: model.push_to_hub_gguf("YShane11/llama3.2_flight", tokenizer, quantization_method = "q4_k_m", token = "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")
+
+# torch.cuda.empty_cache()

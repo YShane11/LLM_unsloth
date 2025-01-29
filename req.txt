@@ -101,6 +101,5 @@ urllib3==2.2.3
 wandb==0.18.6
 wcwidth==0.2.13
 wheel==0.45.0
-xformers @ https://download.pytorch.org/whl/cu124/xformers-0.0.28.post2-cp312-cp312-manylinux_2_28_x86_64.whl#sha256=6e255c94b3471a46af444917fbc1f3306dcc6d1ae064825913e58676a8f3f5fc
 xxhash==3.5.0
 yarl==1.17.1
