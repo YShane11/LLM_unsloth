@@ -89,7 +89,7 @@ trainer = SFTTrainer(
         gradient_accumulation_steps = 4,
         warmup_steps = 5,
         # num_train_epochs = 1, # Set this for 1 full training run.
-        max_steps = 200,
+        max_steps = 10,
         learning_rate = 1e-5,
         fp16 = is_bfloat16_supported(),
         bf16 = not is_bfloat16_supported(),
@@ -122,3 +122,4 @@ torch.cuda.empty_cache()
 # (2) 從已儲存的LoRA適配器繼續訓練
 # (3) 添加評估迴圈 / 解決OOM問題
 # (4) 自訂聊天範本
+# python3 /root/LLM_unsloth/llama.cpp/convert_hf_to_gguf.py --outtype f16 --outfile llama3.2_flight.gguf ./YShane11/llama3.2_flight
