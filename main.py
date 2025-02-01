@@ -12,25 +12,6 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
 wandb.login()
 os.environ["WANDB_PROJECT"] = "YSH"
 
-fourbit_models = [
-    "unsloth/Meta-Llama-3.1-8B-bnb-4bit",     
-    "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit",
-    "unsloth/Meta-Llama-3.1-70B-bnb-4bit",
-    "unsloth/Meta-Llama-3.1-405B-bnb-4bit",  
-    "unsloth/Mistral-Small-Instruct-2409",     
-    "unsloth/mistral-7b-instruct-v0.3-bnb-4bit",
-    "unsloth/Phi-3.5-mini-instruct",           
-    "unsloth/Phi-3-medium-4k-instruct",
-    "unsloth/gemma-2-9b-bnb-4bit",
-    "unsloth/gemma-2-27b-bnb-4bit",           
-
-    "unsloth/Llama-3.2-1B-bnb-4bit",           
-    "unsloth/Llama-3.2-1B-Instruct-bnb-4bit",
-    "unsloth/Llama-3.2-3B-bnb-4bit",
-    "unsloth/Llama-3.2-3B-Instruct-bnb-4bit",
-]  # More models at unsloth
-# 定義可用的 4-bit 模型清單，這些模型使用低精度表示法以減少記憶體需求
-
 max_seq_length = 1024
 
 model, tokenizer = FastLanguageModel.from_pretrained(
@@ -38,16 +19,16 @@ model, tokenizer = FastLanguageModel.from_pretrained(
     max_seq_length = max_seq_length,
     dtype = None,
     load_in_4bit = True,
-    token = "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",
+    token = "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",
 )
 # 從 unsloth 下載 Llama-3.2-3B-Instruct 模型和相應的 tokenizer，設定最大序列長度和 4-bit 量化
 
 model = FastLanguageModel.get_peft_model(
     model,
-    r = 4, # 會影響模型壓縮的效果和表現
+    r = 8, # 會影響模型壓縮的效果和表現
     target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
                       "gate_proj", "up_proj", "down_proj",],
-    lora_alpha = 8, # 調節低秩層對最終輸出的影響
+    lora_alpha = 16, # 調節低秩層對最終輸出的影響
     lora_dropout = 0.1,
     bias = "none", 
     use_gradient_checkpointing = True, 
@@ -105,8 +86,8 @@ trainer = SFTTrainer(
     packing = False, # Can make training 5x faster for short sequences.
     args = TrainingArguments(
         per_device_train_batch_size = 1,
-        gradient_accumulation_steps = 16,
-        warmup_steps = 30,
+        gradient_accumulation_steps = 4,
+        warmup_steps = 5,
         # num_train_epochs = 1, # Set this for 1 full training run.
         max_steps = 200,
         learning_rate = 1e-5,
@@ -121,13 +102,19 @@ trainer = SFTTrainer(
         report_to = "wandb", # Use this for WandB etc
     ),
 )
-# 建立 SFTTrainer 實例，設定模型和數據集，用於微調，並指定各項訓練參數
-
-torch.cuda.empty_cache()
-
 trainer_stats = trainer.train()
-# 開始訓練模型
 
+
+model.save_pretrained("./YShane11/llama3.2_flight") # Local saving
+tokenizer.save_pretrained("./YShane11/llama3.2_flight")
+model.push_to_hub("YShane11/llama3.2_flight", token = "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") # Online saving
+tokenizer.push_to_hub("YShane11/llama3.2_flight", token = "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") # Online saving
+
+
+if True: model.save_pretrained_gguf("/root/LLM_unsloth/gguf_models/YShane11", tokenizer, quantization_method = "f16")
+# if True: model.push_to_hub_gguf("YShane11/llama3.2_flight", tokenizer, quantization_method = "f16", token = "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")
+# if True: model.save_pretrained_gguf("/root/LLM_unsloth/gguf_models/YShane11", tokenizer, quantization_method = "q4_k_m")
+# if True: model.push_to_hub_gguf("YShane11/llama3.2_flight", tokenizer, quantization_method = "q4_k_m", token = "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")
 torch.cuda.empty_cache()
 
 # 參見 https://github.com/unslothai/unsloth/wiki 獲取進階訓練技巧，如：
@@ -135,17 +122,3 @@ torch.cuda.empty_cache()
 # (2) 從已儲存的LoRA適配器繼續訓練
 # (3) 添加評估迴圈 / 解決OOM問題
 # (4) 自訂聊天範本
-
-model.save_pretrained("./YShane11/llama3.2_flight") # Local saving
-tokenizer.save_pretrained("./YShane11/llama3.2_flight")
-
-torch.cuda.empty_cache()
-model.push_to_hub("YShane11/llama3.2_flight", token = "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") # Online saving
-tokenizer.push_to_hub("YShane11/llama3.2_flight", token = "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") # Online saving
-
-torch.cuda.empty_cache()
-
-# if True: model.push_to_hub_gguf("YShane11/llama3.2_flight", tokenizer, quantization_method = "f16", token = "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")
-# if True: model.push_to_hub_gguf("YShane11/llama3.2_flight", tokenizer, quantization_method = "q4_k_m", token = "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")
-
-# torch.cuda.empty_cache()
