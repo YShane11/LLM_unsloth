@@ -12,10 +12,10 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
 wandb.login()
 os.environ["WANDB_PROJECT"] = "YSH"
 
-max_seq_length = 1024
+max_seq_length = 2048
 
 model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name = "unsloth/Llama-3.2-1B-Instruct", 
+    model_name = "unsloth/Llama-3.2-3B-Instruct", 
     max_seq_length = max_seq_length,
     dtype = None,
     load_in_4bit = True,
@@ -69,7 +69,7 @@ def formatting_prompts_func(examples):
     return { "text" : texts}
 
 from datasets import load_dataset
-dataset = load_dataset("YShane11/flight_command", split = "train")
+dataset = load_dataset("YShane11/legislation_train", split = "train")
 dataset = dataset.map(formatting_prompts_func, batched=True)
 dataset = dataset.filter(lambda example: example["text"] is not None)
 # ===========================================================================================================================================
@@ -85,18 +85,18 @@ trainer = SFTTrainer(
     dataset_num_proc = 2,
     packing = False, # Can make training 5x faster for short sequences.
     args = TrainingArguments(
-        per_device_train_batch_size = 1,
-        gradient_accumulation_steps = 4,
-        warmup_steps = 5,
-        # num_train_epochs = 1, # Set this for 1 full training run.
-        max_steps = 10,
-        learning_rate = 1e-5,
-        fp16 = is_bfloat16_supported(),
-        bf16 = not is_bfloat16_supported(),
+        per_device_train_batch_size = 4,
+        gradient_accumulation_steps = 2,
+        warmup_steps = 50,
+        num_train_epochs = 3, # Set this for 1 full training run.
+        max_steps = 1000,
+        learning_rate = 3e-5,
+        fp16 = not is_bfloat16_supported(),
+        bf16 = is_bfloat16_supported(),
         logging_steps = 10,
-        optim = "adamw_8bit",
+        optim = "adamw_torch",
         weight_decay = 0.01,
-        lr_scheduler_type = "linear",
+        lr_scheduler_type = "cosine",
         seed = 3407,
         output_dir = "outputs",
         report_to = "wandb", # Use this for WandB etc
@@ -105,13 +105,13 @@ trainer = SFTTrainer(
 trainer_stats = trainer.train()
 
 
-model.save_pretrained("./YShane11/llama3.2_flight") # Local saving
-tokenizer.save_pretrained("./YShane11/llama3.2_flight")
-model.push_to_hub("YShane11/llama3.2_flight", token = "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") # Online saving
-tokenizer.push_to_hub("YShane11/llama3.2_flight", token = "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") # Online saving
+model.save_pretrained("./YShane11/legislation") # Local saving
+tokenizer.save_pretrained("./YShane11/legislation")
+model.push_to_hub("YShane11/legislation", token = "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") # Online saving
+tokenizer.push_to_hub("YShane11/legislation", token = "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") # Online saving
 
 
-if True: model.save_pretrained_gguf("/root/LLM_unsloth/gguf_models/YShane11", tokenizer, quantization_method = "f16")
+# if True: model.save_pretrained_gguf("/root/LLM_unsloth/gguf_models/YShane11", tokenizer, quantization_method = "f16")
 # if True: model.push_to_hub_gguf("YShane11/llama3.2_flight", tokenizer, quantization_method = "f16", token = "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")
 # if True: model.save_pretrained_gguf("/root/LLM_unsloth/gguf_models/YShane11", tokenizer, quantization_method = "q4_k_m")
 # if True: model.push_to_hub_gguf("YShane11/llama3.2_flight", tokenizer, quantization_method = "q4_k_m", token = "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")
